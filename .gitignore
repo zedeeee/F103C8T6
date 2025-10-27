@@ -1,6 +1,7 @@
 build
 mx.scratch
 !.settings
+.clangd
 
 # Build artifacts
 /build/
