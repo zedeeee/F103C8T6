@@ -50,7 +50,7 @@ env/
 ENV/
 
 # STM32CubeMX / CubeIDE generated (remove if you want to track these)
-*.ioc
+# *.ioc
 *.mxproject
 .mxbuild/
 .CUBEIDE/
