@@ -95,9 +95,9 @@ int main(void)
   while (1)
   {
     HAL_GPIO_WritePin(LED_SYS_GPIO_Port, LED_SYS_Pin, GPIO_PIN_RESET);
-    HAL_Delay(500); // LED ON for 500 ms
+    HAL_Delay(50); // LED ON for 500 ms
     HAL_GPIO_WritePin(LED_SYS_GPIO_Port, LED_SYS_Pin, GPIO_PIN_SET);
-    HAL_Delay(500); // LED OFF for 500 ms
+    HAL_Delay(50); // LED OFF for 500 ms
 
     status++;
     if (status > 9) {
