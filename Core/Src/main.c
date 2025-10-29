@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdlib.h>
+#include "led.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,7 +32,22 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// --- 烛光效果参数定义 ---
+// 这些宏定义取代了硬编码的“魔术数字”，方便统一配置和修改。
 
+// 亮度的变化范围，决定了烛光“跳动”的幅度。
+#define CANDLE_BRIGHTNESS_MIN     100 // 最小亮度，避免完全熄灭
+#define CANDLE_BRIGHTNESS_MAX     255 // 最大亮度
+#define CANDLE_INITIAL_BRIGHTNESS 150 // 初始亮度
+
+// 亮度每次随机变化的范围中心点和幅度。
+// 变化量 = (rand() % CANDLE_CHANGE_RANGE) - CANDLE_CHANGE_OFFSET
+#define CANDLE_CHANGE_RANGE       11  // 例如: rand() % 11 -> [0, 10]
+#define CANDLE_CHANGE_OFFSET      5   // 例如: [0, 10] - 5 -> [-5, 5]
+
+// 每一帧（亮度更新）之间的随机延迟时间范围。
+#define CANDLE_FRAME_DELAY_BASE   50  // 基础延迟 (ms)
+#define CANDLE_FRAME_DELAY_RANGE  50  // 随机延迟范围 (ms)，总延迟 = base + rand() % range
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -40,20 +56,57 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
-
+// --- 私有变量 ---
+// 当前LED的亮度值，定义为静态变量以在函数调用之间保持其状态。
+static int g_led_brightness = CANDLE_INITIAL_BRIGHTNESS;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+
+/**
+  * @brief   执行单步烛光效果的逻辑更新。
+  * @details 该函数负责计算下一次的亮度，并通过调用LED驱动来更新显示。
+  *          它包含了烛光效果的所有核心算法，但与硬件实现解耦。
+  * @param   None
+  * @retval  None
+  */
+static void candle_effect_update(void)
+{
+  // 1. 平滑随机游走：通过增加一个小的随机值来调整亮度
+  int change = (rand() % CANDLE_CHANGE_RANGE) - CANDLE_CHANGE_OFFSET;
+  g_led_brightness += change;
+
+  // 2. 边界限制：将亮度值限制在一个舒适的范围内
+  if (g_led_brightness < CANDLE_BRIGHTNESS_MIN)
+  {
+    g_led_brightness = CANDLE_BRIGHTNESS_MIN;
+  }
+  if (g_led_brightness > CANDLE_BRIGHTNESS_MAX)
+  {
+    g_led_brightness = CANDLE_BRIGHTNESS_MAX;
+  }
+
+  // 3. 调用驱动层接口设置亮度
+  //    业务逻辑层不再关心LED是如何被点亮的（软件PWM或硬件PWM），只负责传递亮度值。
+  led_set_brightness((uint8_t)g_led_brightness);
+
+
+  // 4. 非均匀时间间隔：在下一次亮度更新前，随机等待一段时间
+  HAL_Delay((rand() % CANDLE_FRAME_DELAY_RANGE) + CANDLE_FRAME_DELAY_BASE);
+}
 
 /* USER CODE END 0 */
 
@@ -86,24 +139,18 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  // MX_TIM2_Init(); // 暂时不使用硬件PWM
   /* USER CODE BEGIN 2 */
-  int status = 0;
+  // 初始化LED驱动
+  led_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    HAL_GPIO_WritePin(LED_SYS_GPIO_Port, LED_SYS_Pin, GPIO_PIN_RESET);
-    HAL_Delay(50); // LED ON for 500 ms
-    HAL_GPIO_WritePin(LED_SYS_GPIO_Port, LED_SYS_Pin, GPIO_PIN_SET);
-    HAL_Delay(50); // LED OFF for 500 ms
-
-    status++;
-    if (status > 9) {
-      status = 0;
-    }
-
+    // 主循环现在只负责调用业务逻辑函数，实现了初步的逻辑分离。
+    candle_effect_update();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -148,13 +195,61 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 0;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 65535;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
   */
 static void MX_GPIO_Init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
 
   /* USER CODE END MX_GPIO_Init_1 */
@@ -163,18 +258,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LED_SYS_GPIO_Port, LED_SYS_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : LED_SYS_Pin */
-  GPIO_InitStruct.Pin = LED_SYS_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LED_SYS_GPIO_Port, &GPIO_InitStruct);
-
   /* USER CODE BEGIN MX_GPIO_Init_2 */
-
+  // 所有GPIO的初始化现在由CubeMX自动生成的代码处理。
+  // 用于PWM的引脚(如PA0)由HAL_TIM_MspPostInit()在MX_TIM2_Init()中配置。
+  // 原有的PC13引脚配置不再需要。
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
